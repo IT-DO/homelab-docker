@@ -7,9 +7,9 @@
 | Сервис | Порт | Назначение |
 |---|---|---|
 | `nginx` | 80 / 443 | reverse proxy, статика, единая точка входа |
-| `prometheus` | 9090 | сбор метрик, `scrape_interval: 15s` |
-| `grafana` | 3000 | дашборды и алерты |
-| `node-exporter` | 9100 | метрики хоста (CPU / RAM / диск / сеть) |
+| `prometheus` | внутренний 9090 | сбор метрик, `scrape_interval: 15s` |
+| `grafana` | `127.0.0.1:3000` | дашборды и алерты, только локально |
+| `node-exporter` | внутренний 9100 | метрики хоста (CPU / RAM / диск / сеть) |
 
 ## Схема
 
@@ -31,20 +31,20 @@
 ## Запуск
 
 ```bash
-export GF_SECURITY_ADMIN_PASSWORD='change-me'   # пароль админа Grafana
+export GF_SECURITY_ADMIN_PASSWORD='change-me'   # пароль админа Grafana, обязателен
 docker compose up -d
 docker compose ps
 ```
 
 - Grafana: http://localhost:3000 — логин `admin`, пароль из `GF_SECURITY_ADMIN_PASSWORD`
-- Prometheus: http://localhost:9090
+- Prometheus и node-exporter наружу не публикуются: доступ к ним — только изнутри compose-сети
 
 ## Проверка
 
 ```bash
-curl -s localhost:9090/-/healthy            # Prometheus жив
-curl -s localhost:9100/metrics | head       # метрики хоста
-docker compose logs -f --tail=50            # логи всех сервисов
+curl -s localhost:3000/api/health            # Grafana: {"database":"ok"}
+docker compose ps                            # все сервисы Up
+docker compose logs -f --tail=50             # логи всех сервисов
 ```
 
 ## Структура
@@ -61,6 +61,14 @@ nginx/conf/default.conf     пример reverse proxy (замените апс�
 - сбор метрик Prometheus и визуализацию в Grafana;
 - единую точку входа через nginx;
 - персистентность данных в именованных томах и их бэкап.
+
+## Безопасность
+
+- **Порт Grafana привязан к `127.0.0.1`** — снаружи и из LAN он недоступен. Нужен доступ с другого хоста: `ssh -L 3000:localhost:3000 user@host`.
+- **Prometheus и node-exporter не публикуют порты** (`expose` вместо `ports`): метрики собираются внутри compose-сети. Открытый `9100` — это утечка сведений о хосте, открытый `9090` — доступ к метрикам без авторизации.
+- **Пароль Grafana обязателен**: `${GF_SECURITY_ADMIN_PASSWORD:?...}` — без переменной `docker compose up` падает, а не поднимает админку с дефолтом.
+- **Самописные пароли в compose не хранятся**: только переменные окружения, `.env` — в `.gitignore`.
+- Перед публикацией портов наружу — reverse proxy с TLS и авторизацией (nginx уже в стеке).
 
 ## Заметки
 
